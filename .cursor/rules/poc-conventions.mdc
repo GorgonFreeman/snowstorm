@@ -9,6 +9,10 @@ alwaysApply: true
 
 Keep code **minimal** and easy to follow. This repo is for **Snowflake onboarding** and **local credential layout** (`.env`, `.secrets/`).
 
+## Highly opinionated
+
+Code should do things one, easy way. Do not allow options for doing things other ways. This is also in service of keeping code concise.
+
 ## Runtime
 
 Use **Node.js** for scripts in this repo.
