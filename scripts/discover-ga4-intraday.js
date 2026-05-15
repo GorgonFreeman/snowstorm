@@ -4,10 +4,11 @@
  * using the Cloud BigQuery API (@google-cloud/bigquery).
  *
  * Env: GOOGLE_CLOUD_PROJECT (or GCP_PROJECT), GOOGLE_SERVICE_ACCOUNT_JSON,
- *      optional GA4_BIGQUERY_DATASET.
+ *      GA4 dataset resolved via BigQuery API when GA4_BIGQUERY_DATASET is unset (or verified if set).
  */
 const { BigQuery } = require('@google-cloud/bigquery');
 const { loadEnv, getBigQueryClientOptions } = require('./load-env.js');
+const { resolveGa4BigQueryDatasetId } = require('./resolve-ga4-bq-dataset.js');
 
 const INTRADAY_PREFIX = 'events_intraday_';
 
@@ -46,20 +47,6 @@ async function listIntradayInDataset(bigquery, datasetId) {
   return sortNewestFirst(intraday);
 }
 
-async function listIntradayAcrossProject(bigquery) {
-  const [datasets] = await bigquery.getDatasets({ autoPaginate: true });
-  const all = [];
-  for (const ds of datasets) {
-    const datasetId = ds.id;
-    if (!datasetId) {
-      continue;
-    }
-    const found = await listIntradayInDataset(bigquery, datasetId);
-    all.push(...found);
-  }
-  return sortNewestFirst(all);
-}
-
 async function main() {
   loadEnv();
 
@@ -73,21 +60,22 @@ async function main() {
   }
 
   const projectId = clientOpts.projectId;
-  const focusedDataset = process.env.GA4_BIGQUERY_DATASET?.trim() || null;
   const bigquery = new BigQuery(clientOpts);
 
-  let rows;
-  if (focusedDataset) {
-    rows = await listIntradayInDataset(bigquery, focusedDataset);
-    console.log(
-      `Project ${ projectId }, dataset ${ focusedDataset }: ${ rows.length } ${ INTRADAY_PREFIX }* table(s)`,
-    );
-  } else {
-    rows = await listIntradayAcrossProject(bigquery);
-    console.log(
-      `Project ${ projectId } (all datasets): ${ rows.length } ${ INTRADAY_PREFIX }* table(s)`,
-    );
+  let focusedDataset;
+  try {
+    focusedDataset = await resolveGa4BigQueryDatasetId(bigquery);
+  } catch (e) {
+    console.error(e.message || e);
+    process.exit(1);
+    return;
   }
+  console.log(`Dataset (BigQuery API): ${ focusedDataset }`);
+
+  const rows = await listIntradayInDataset(bigquery, focusedDataset);
+  console.log(
+    `Project ${ projectId }, dataset ${ focusedDataset }: ${ rows.length } ${ INTRADAY_PREFIX }* table(s)`,
+  );
 
   if (rows.length === 0) {
     console.log(

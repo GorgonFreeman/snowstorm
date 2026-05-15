@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "onboard": "node onboard.js",
-    "discover-intraday": "node scripts/discover-ga4-intraday.js"
+    "discover-intraday": "node scripts/discover-ga4-intraday.js",
+    "sync-intraday": "node scripts/sync-intraday.js"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^8.1.1",

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * Interactive CLI: verify Snowflake key-pair auth, pick warehouse + database (+ schema),
- * optionally create database/schema, write SNOWFLAKE_* to .env
+ * optionally create database/schema, create GA4 landing tables + file format, write .env.
+ * Pre-set SNOWFLAKE_* / GA4_* in .env are used when they match Snowflake (warehouse, database, schema)
+ * or as defaults for GA4 prompts (Enter keeps .env).
  */
 const fs = require('fs');
 const path = require('path');
@@ -11,6 +13,7 @@ const {
   loadEnv,
   getSnowflakeConnectionOptionsMinimal,
 } = require('./scripts/load-env.js');
+const { quoteIdent } = require('./scripts/snowflake-sql.js');
 
 const ROOT = __dirname;
 const ENV_PATH = path.join(ROOT, '.env');
@@ -19,6 +22,21 @@ const SKIP_DB = new Set([
   'SNOWFLAKE',
   'SNOWFLAKE_SAMPLE_DATA',
 ]);
+
+/** Resolve env value to the canonical string from `items` (Snowflake uppercases identifiers). */
+function pickCanonicalIfListed(items, envRaw) {
+  const v = envRaw?.trim();
+  if (!v || !items?.length) {
+    return null;
+  }
+  const upper = v.toUpperCase();
+  for (const item of items) {
+    if (item && item.toUpperCase() === upper) {
+      return item;
+    }
+  }
+  return null;
+}
 
 function pickName(row) {
   return row.name ?? row.NAME ?? row['name'];
@@ -29,7 +47,7 @@ function isSafeIdentifier(name) {
 }
 
 function quoteId(name) {
-  return `"${ String(name).replace(/"/g, '""') }"`;
+  return quoteIdent(name);
 }
 
 function upsertEnv(envPath, updates) {
@@ -135,7 +153,14 @@ async function main() {
       process.exit(1);
     }
 
-    let whPick = null;
+    let whPick = pickCanonicalIfListed(warehouses, process.env.SNOWFLAKE_WAREHOUSE);
+    if (whPick) {
+      console.log(`\nUsing SNOWFLAKE_WAREHOUSE from .env: ${ whPick }`);
+    } else if (process.env.SNOWFLAKE_WAREHOUSE?.trim()) {
+      console.log(
+        `\nNote: SNOWFLAKE_WAREHOUSE is set but not in the visible list; pick a warehouse below.`,
+      );
+    }
     while (!whPick) {
       const picked = await pickFromList(
         rl,
@@ -168,7 +193,14 @@ async function main() {
       .filter(Boolean)
       .filter((n) => !SKIP_DB.has(n));
 
-    let dbName = null;
+    let dbName = pickCanonicalIfListed(databases, process.env.SNOWFLAKE_DATABASE);
+    if (dbName) {
+      console.log(`\nUsing SNOWFLAKE_DATABASE from .env: ${ dbName }`);
+    } else if (process.env.SNOWFLAKE_DATABASE?.trim()) {
+      console.log(
+        `\nNote: SNOWFLAKE_DATABASE is set but not in the visible list; pick or create below.`,
+      );
+    }
     while (!dbName) {
       const picked = await pickFromList(
         rl,
@@ -206,7 +238,14 @@ async function main() {
       .filter(Boolean)
       .filter((n) => n !== 'INFORMATION_SCHEMA');
 
-    let schName = null;
+    let schName = pickCanonicalIfListed(schemas, process.env.SNOWFLAKE_SCHEMA);
+    if (schName) {
+      console.log(`\nUsing SNOWFLAKE_SCHEMA from .env: ${ schName }`);
+    } else if (process.env.SNOWFLAKE_SCHEMA?.trim()) {
+      console.log(
+        `\nNote: SNOWFLAKE_SCHEMA is set but not in this database; pick or create below.`,
+      );
+    }
     while (!schName) {
       const picked = await pickFromList(
         rl,
@@ -235,12 +274,85 @@ async function main() {
       }
     }
 
+    await runQuery(conn, `USE SCHEMA ${ quoteId(dbName) }.${ quoteId(schName) }`);
+
+    await runQuery(
+      conn,
+      `CREATE FILE FORMAT IF NOT EXISTS ${ quoteId('SNOWSTORM_NDJSON_FMT') } TYPE = 'JSON'`,
+    );
+
+    await runQuery(
+      conn,
+      `CREATE TABLE IF NOT EXISTS ${ quoteId('GA4_INTRADAY_SYNC_STATE') } (
+  sync_key VARCHAR(512) PRIMARY KEY,
+  watermark_event_timestamp BIGINT NOT NULL,
+  updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+) COMMENT = 'snowstorm: high-water mark per intraday BQ partition'`,
+    );
+
+    await runQuery(
+      conn,
+      `CREATE TABLE IF NOT EXISTS ${ quoteId('GA4_INTRADAY_EVENTS') } (
+  raw VARIANT NOT NULL,
+  bq_table_date VARCHAR(8) NOT NULL,
+  loaded_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+) COMMENT = 'snowstorm: GA4 events_intraday rows merged from BigQuery'`,
+    );
+
     upsertEnv(ENV_PATH, {
       SNOWFLAKE_WAREHOUSE: whPick,
       SNOWFLAKE_DATABASE: dbName,
       SNOWFLAKE_SCHEMA: schName,
     });
 
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()) {
+      try {
+        const { BigQuery } = require('@google-cloud/bigquery');
+        const { getBigQueryClientOptions } = require('./scripts/load-env.js');
+        const { resolveGa4BigQueryDatasetId } = require('./scripts/resolve-ga4-bq-dataset.js');
+        const bq = new BigQuery(getBigQueryClientOptions());
+        const id = await resolveGa4BigQueryDatasetId(bq);
+        upsertEnv(ENV_PATH, { GA4_BIGQUERY_DATASET: id });
+        console.log(`\nGA4_BIGQUERY_DATASET (BigQuery API): ${ id }`);
+      } catch (e) {
+        console.warn(`\n${ e.message }`);
+        const manual = (
+          await rl.question('Enter GA4 BigQuery dataset id manually (e.g. analytics_402247571):\n> ')
+        ).trim();
+        if (manual && isSafeIdentifier(manual)) {
+          upsertEnv(ENV_PATH, { GA4_BIGQUERY_DATASET: manual });
+          console.log(`  Wrote GA4_BIGQUERY_DATASET=${ manual }`);
+        }
+      }
+    } else {
+      console.log('\nSkipping GA4 dataset API resolution (add GOOGLE_SERVICE_ACCOUNT_JSON to .env).');
+      const manual = (
+        await rl.question('GA4 BigQuery dataset id (optional, Enter to skip):\n> ')
+      ).trim();
+      if (manual && isSafeIdentifier(manual)) {
+        upsertEnv(ENV_PATH, { GA4_BIGQUERY_DATASET: manual });
+        console.log(`  Wrote GA4_BIGQUERY_DATASET=${ manual }`);
+      }
+    }
+
+    const tzFromEnv = process.env.GA4_REPORTING_TIMEZONE?.trim();
+    const tzPrompt = await rl.question(
+      `GA4 reporting timezone (IANA). Enter = ${ tzFromEnv ? `keep ${ tzFromEnv }` : 'use UTC' }:\n> `,
+    );
+    const tz = tzPrompt.trim() || tzFromEnv || 'UTC';
+    upsertEnv(ENV_PATH, { GA4_REPORTING_TIMEZONE: tz });
+    if (tzPrompt.trim()) {
+      console.log(`  Wrote GA4_REPORTING_TIMEZONE=${ tz }`);
+    } else {
+      console.log(`  Using GA4_REPORTING_TIMEZONE=${ tz }`);
+    }
+
+    console.log(
+      '\nOne-time Snowflake objects (if not already present):',
+      `\n  FILE FORMAT ${ schName }.SNOWSTORM_NDJSON_FMT`,
+      `\n  TABLE ${ schName }.GA4_INTRADAY_SYNC_STATE`,
+      `\n  TABLE ${ schName }.GA4_INTRADAY_EVENTS`,
+    );
     console.log(
       `\nWrote to ${ path.relative(process.cwd(), ENV_PATH) || '.env' }:`,
       `\n  SNOWFLAKE_WAREHOUSE=${ whPick }`,
