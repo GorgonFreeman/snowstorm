@@ -118,21 +118,39 @@ async function flushBatchToSnowflake(conn, rows, bqTableDate) {
   if (!rows.length) {
     return;
   }
-  const lines = rows.map((r) => {
-    let raw;
-    try {
-      raw = JSON.parse(r.row_json);
-    } catch {
-      raw = {};
-    }
-    return `${ JSON.stringify({
-      raw,
-      bq_table_date: bqTableDate,
-    }) }\n`;
-  });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snowstorm-ga4-'));
   const filePath = path.join(dir, `batch-${ process.pid }-${ Date.now() }.json`);
-  fs.writeFileSync(filePath, lines.join(''), 'utf8');
+
+  await new Promise((resolve, reject) => {
+    const stream = fs.createWriteStream(filePath, { encoding: 'utf8' });
+    stream.on('error', reject);
+    stream.on('finish', resolve);
+
+    let i = 0;
+    function writeNext() {
+      while (i < rows.length) {
+        const r = rows[i];
+        i += 1;
+        let raw;
+        try {
+          raw = JSON.parse(r.row_json);
+        } catch {
+          raw = {};
+        }
+        const line = `${ JSON.stringify({
+          raw,
+          bq_table_date: bqTableDate,
+        }) }\n`;
+        if (!stream.write(line)) {
+          stream.once('drain', writeNext);
+          return;
+        }
+      }
+      stream.end();
+    }
+    writeNext();
+  });
+
   const fileUrl = pathToFileURL(filePath).href;
 
   await runQuery(
