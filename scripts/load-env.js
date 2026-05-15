@@ -51,8 +51,50 @@ function getSnowflakeConnectionOptionsMinimal() {
   return opts;
 }
 
+/**
+ * Options for @google-cloud/bigquery BigQuery client.
+ * Auth: GOOGLE_SERVICE_ACCOUNT_JSON (inline service account JSON) only.
+ * projectId: GOOGLE_CLOUD_PROJECT | GCP_PROJECT | BIGQUERY_PROJECT | credentials.project_id
+ */
+function getBigQueryClientOptions() {
+  const projectIdFromEnv =
+    process.env.GOOGLE_CLOUD_PROJECT?.trim()
+    || process.env.GCP_PROJECT?.trim()
+    || process.env.BIGQUERY_PROJECT?.trim()
+    || null;
+
+  const jsonRaw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
+  if (!jsonRaw) {
+    throw new Error('Set GOOGLE_SERVICE_ACCOUNT_JSON in .env');
+  }
+
+  let credentials;
+  try {
+    credentials = JSON.parse(jsonRaw);
+  } catch {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON');
+  }
+
+  const projectId =
+    projectIdFromEnv
+    || credentials?.project_id
+    || null;
+
+  if (!projectId) {
+    throw new Error(
+      'Set GOOGLE_CLOUD_PROJECT (or include project_id in GOOGLE_SERVICE_ACCOUNT_JSON)',
+    );
+  }
+
+  return {
+    projectId,
+    credentials,
+  };
+}
+
 module.exports = {
   loadEnv,
   getSnowflakePrivateKeyPem,
   getSnowflakeConnectionOptionsMinimal,
+  getBigQueryClientOptions,
 };

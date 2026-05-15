@@ -3,9 +3,11 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "onboard": "node onboard.js"
+    "onboard": "node onboard.js",
+    "discover-intraday": "node scripts/discover-ga4-intraday.js"
   },
   "dependencies": {
+    "@google-cloud/bigquery": "^8.1.1",
     "dotenv": "^16.6.1",
     "snowflake-sdk": "^2.3.1"
   }
