@@ -1,0 +1,20 @@
+---
+description: PoC scope, Node.js, and .env.sample workflow for snowstorm
+alwaysApply: true
+---
+
+# Snowstorm PoC conventions
+
+## Proof of concept
+
+Keep code **absolutely minimal** and **easy to read**. Prefer the smallest change that works. Avoid extra layers, premature generalization, and dependencies unless they clearly reduce complexity for this PoC.
+
+## Runtime
+
+Use **Node.js** for scripts, CLIs, and any runtime code in this repo.
+
+## Environment variables
+
+- Keep **`.env.sample`** in the project root with **placeholder** values only (no real credentials).
+- When introducing or changing config, update **`.env.sample`** and **tell the user** to copy or merge into their real **`.env`** as needed.
+- Never commit real secrets; use a local **`.env`** (ignored by git).
