@@ -1,1 +1,5 @@
 .env
+node_modules/
+# Repo-local secrets (keys, etc.); never commit.
+.secrets/
+snowflake.log
