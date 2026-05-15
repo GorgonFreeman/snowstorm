@@ -1,20 +1,20 @@
 ---
-description: PoC scope, Node.js, and .env.sample workflow for snowstorm
+description: Minimal Node, env and secrets workflow for snowstorm
 alwaysApply: true
 ---
 
-# Snowstorm PoC conventions
+# Snowstorm conventions
 
-## Proof of concept
+## Scope
 
-Keep code **absolutely minimal** and **easy to read**. Prefer the smallest change that works. Avoid extra layers, premature generalization, and dependencies unless they clearly reduce complexity for this PoC.
+Keep code **minimal** and easy to follow. This repo is for **Snowflake onboarding** and **local credential layout** (`.env`, `.secrets/`).
 
 ## Runtime
 
-Use **Node.js** for scripts, CLIs, and any runtime code in this repo.
+Use **Node.js** for scripts in this repo.
 
-## Environment variables
+## Environment and secrets
 
-- Keep **`.env.sample`** in the project root with **placeholder** values only (no real credentials).
-- When introducing or changing config, update **`.env.sample`** and **tell the user** to copy or merge into their real **`.env`** as needed.
-- Never commit real secrets; use a local **`.env`** (ignored by git).
+- Maintain **`.env.sample`** with placeholders only.
+- Real values live in **`.env`** (gitignored). Key material under **`.secrets/`** (gitignored).
+- Do not commit secrets.
