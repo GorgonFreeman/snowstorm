@@ -335,16 +335,30 @@ async function main() {
       }
     }
 
-    const tzFromEnv = process.env.GA4_REPORTING_TIMEZONE?.trim();
-    const tzPrompt = await rl.question(
-      `GA4 reporting timezone (IANA). Enter = ${ tzFromEnv ? `keep ${ tzFromEnv }` : 'use UTC' }:\n> `,
-    );
-    const tz = tzPrompt.trim() || tzFromEnv || 'UTC';
-    upsertEnv(ENV_PATH, { GA4_REPORTING_TIMEZONE: tz });
-    if (tzPrompt.trim()) {
-      console.log(`  Wrote GA4_REPORTING_TIMEZONE=${ tz }`);
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()) {
+      try {
+        const { resolveGa4ReportingTimezone } = require('./scripts/resolve-ga4-timezone.js');
+        const tz = await resolveGa4ReportingTimezone();
+        upsertEnv(ENV_PATH, { GA4_REPORTING_TIMEZONE: tz });
+        console.log(`\nGA4_REPORTING_TIMEZONE (Analytics Admin API or existing .env): ${ tz }`);
+      } catch (e) {
+        console.warn(`\n${ e.message }`);
+        const manual = (await rl.question('GA4 reporting timezone (IANA, manual):\n> ')).trim();
+        const tz =
+          manual
+          || process.env.GA4_REPORTING_TIMEZONE?.trim()
+          || 'UTC';
+        upsertEnv(ENV_PATH, { GA4_REPORTING_TIMEZONE: tz });
+        console.log(`  Wrote GA4_REPORTING_TIMEZONE=${ tz }`);
+      }
     } else {
-      console.log(`  Using GA4_REPORTING_TIMEZONE=${ tz }`);
+      const tzFromEnv = process.env.GA4_REPORTING_TIMEZONE?.trim();
+      const tzPrompt = await rl.question(
+        `GA4 reporting timezone (IANA). Enter = ${ tzFromEnv || 'UTC' }:\n> `,
+      );
+      const tz = tzPrompt.trim() || tzFromEnv || 'UTC';
+      upsertEnv(ENV_PATH, { GA4_REPORTING_TIMEZONE: tz });
+      console.log(`  Wrote GA4_REPORTING_TIMEZONE=${ tz }`);
     }
 
     console.log(

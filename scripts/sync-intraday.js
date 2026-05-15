@@ -5,7 +5,7 @@
  *
  * Schedule a few times per day (e.g. Cloud Scheduler → Cloud Run). Requires onboard DDL
  * and .env: Snowflake warehouse/db/schema, GOOGLE_SERVICE_ACCOUNT_JSON.
- * GA4 dataset is resolved via BigQuery API (GA4_BIGQUERY_DATASET optional override).
+ * Dataset and reporting timezone from Google APIs unless overridden in .env.
  */
 const fs = require('fs');
 const os = require('os');
@@ -17,9 +17,9 @@ const {
   loadEnv,
   getBigQueryClientOptions,
   getSnowflakeConnectionOptionsForSync,
-  getGa4ReportingTimezone,
 } = require('./load-env.js');
 const { resolveGa4BigQueryDatasetId } = require('./resolve-ga4-bq-dataset.js');
+const { resolveGa4ReportingTimezone } = require('./resolve-ga4-timezone.js');
 const { quoteIdent } = require('./snowflake-sql.js');
 
 const BATCH_LIMIT = Number(process.env.GA4_INTRADAY_BATCH_ROWS || 250000);
@@ -245,7 +245,8 @@ async function main() {
 
   const bqOpts = getBigQueryClientOptions();
   const sfOpts = getSnowflakeConnectionOptionsForSync();
-  const timeZone = getGa4ReportingTimezone();
+  const timeZone = await resolveGa4ReportingTimezone();
+  console.log('sync-intraday reportingTimezone', timeZone);
   const tableSuffixes = intradaySuffixesToSync(timeZone);
 
   const bigquery = new BigQuery(bqOpts);

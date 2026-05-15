@@ -73,13 +73,6 @@ function getSnowflakeConnectionOptionsForSync() {
 }
 
 /**
- * IANA timezone for GA4 intraday table suffix (YYYYMMDD in property reporting time).
- */
-function getGa4ReportingTimezone() {
-  return process.env.GA4_REPORTING_TIMEZONE?.trim() || 'UTC';
-}
-
-/**
  * Options for @google-cloud/bigquery BigQuery client.
  * Auth: GOOGLE_SERVICE_ACCOUNT_JSON (inline service account JSON) only.
  * projectId: GOOGLE_CLOUD_PROJECT | GCP_PROJECT | BIGQUERY_PROJECT | credentials.project_id
@@ -125,6 +118,5 @@ module.exports = {
   getSnowflakePrivateKeyPem,
   getSnowflakeConnectionOptionsMinimal,
   getSnowflakeConnectionOptionsForSync,
-  getGa4ReportingTimezone,
   getBigQueryClientOptions,
 };

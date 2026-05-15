@@ -8,6 +8,7 @@
     "sync-intraday": "node scripts/sync-intraday.js"
   },
   "dependencies": {
+    "@google-analytics/admin": "^8.3.0",
     "@google-cloud/bigquery": "^8.1.1",
     "dotenv": "^16.6.1",
     "snowflake-sdk": "^2.3.1"
